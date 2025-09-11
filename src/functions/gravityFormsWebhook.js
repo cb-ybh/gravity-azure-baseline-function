@@ -281,8 +281,9 @@ async function addToSharePointList(contactData, context) {
         ParentName: contactData.parentName,
         Email: contactData.email,
         SchoolName: contactData.schoolName,
-        NumberofChildren: contactData.numberOfChildren, // Note: matches your list column name
+        NumberofChildren: contactData.numberOfChildren,
         Status: contactData.status,
+        SubmissionDate: contactData.submissionDate,
       },
     };
 
