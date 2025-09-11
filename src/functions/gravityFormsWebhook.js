@@ -6,6 +6,7 @@ const FORM_FIELDS = Object.freeze({
   EMAIL: "email",
   SCHOOL_NAME: "school_name",
   NUMBER_OF_CHILDREN: "number_of_children",
+  ENTRY_DATE: "entry_date",
 });
 
 app.http("gravityFormsWebhook", {
@@ -152,17 +153,16 @@ function extractContactData(formData, context) {
     let email = "";
     let schoolName = "";
     let numberOfChildren = 0;
-
-    context.log("Extracting contact data from form fields...");
+    let entry_date = "";
 
     firstName = formData[FORM_FIELDS.FIRST_NAME] || "";
     lastName = formData[FORM_FIELDS.LAST_NAME] || "";
-
     email = formData[FORM_FIELDS.EMAIL];
-    context.log("Found email:", email ? "Yes" : "No");
-
     schoolName = formData[FORM_FIELDS.SCHOOL_NAME] || "";
-    context.log("Found school name:", schoolName ? "Yes" : "No");
+    numberOfChildren = parseInt(formData[FORM_FIELDS.NUMBER_OF_CHILDREN]) || 0;
+    entry_date = formData[FORM_FIELDS.ENTRY_DATE]
+      ? toAdelaideTime(formData[FORM_FIELDS.ENTRY_DATE])
+      : toAdelaideTime(new Date().toISOString());
 
     // Validate required fields
     if (!email) {
@@ -171,16 +171,14 @@ function extractContactData(formData, context) {
       return null;
     }
 
-    numberOfChildren = parseInt(formData[FORM_FIELDS.NUMBER_OF_CHILDREN]) || 0;
-
     const contactName = `${firstName} ${lastName}`.trim();
 
     const result = {
       parentName: contactName,
       email: email.toLowerCase().trim(),
       schoolName: schoolName.trim(),
-      numberOfChildren: numberOfChildren, // Default for interest form
-      submissionDate: new Date().toISOString(),
+      numberOfChildren: numberOfChildren,
+      submissionDate: entry_date,
       status: "New",
       source: "School Partnership",
     };
@@ -191,6 +189,13 @@ function extractContactData(formData, context) {
     context.log("❌ Error extracting contact data:", error);
     return null;
   }
+}
+
+function toAdelaideTime(dateString) {
+  return new Date(dateString + " UTC").toLocaleString("en-AU", {
+    timeZone: "Australia/Adelaide",
+    hour12: false,
+  });
 }
 
 async function addToSharePointList(contactData, context) {
