@@ -1,12 +1,27 @@
 const { app } = require("@azure/functions");
 
+// Gravity Forms field IDs based on actual form structure
 const FORM_FIELDS = Object.freeze({
-  FIRST_NAME: "first_name",
-  LAST_NAME: "last_name",
-  EMAIL: "email",
-  SCHOOL_NAME: "school_name",
-  NUMBER_OF_CHILDREN: "number_of_children",
-  ENTRY_DATE: "entry_date",
+  // Common fields (all registration types)
+  REG_TYPE: "17",
+  FIRST_NAME: "6.3",
+  LAST_NAME: "6.6",
+  EMAIL: "3",
+  PHONE: "18",
+  ADDITIONAL_NOTES: "27",
+  FORM_IDENTIFIER: "14",
+
+  // Parent/Guardian specific
+  SCHOOL_NAME: "7",
+  NUMBER_OF_CHILDREN: "16",
+
+  // Player specific
+  PLAYER_CLUB_NAME: "22",
+
+  // Club representative specific
+  CLUB_NAME: "24",
+  CLUB_SPORT_TYPE: "25",
+  CLUB_NUMBER_OF_PLAYERS: "26",
 });
 
 app.http("gravityFormsWebhook", {
@@ -103,7 +118,8 @@ app.http("gravityFormsWebhook", {
             success: true,
             message: "Contact added successfully",
             itemId: result.itemId,
-            contact: contactData.parentName,
+            contact: contactData.contactName,
+            registrationType: contactData.registrationType,
           }),
         };
       } else {
@@ -147,43 +163,58 @@ function parseFormData(body) {
 
 function extractContactData(formData, context) {
   try {
-    // Gravity Forms typically sends data with numbered field keys
-    let firstName = "";
-    let lastName = "";
-    let email = "";
-    let schoolName = "";
-    let numberOfChildren = 0;
-    let entry_date = "";
-
-    firstName = formData[FORM_FIELDS.FIRST_NAME] || "";
-    lastName = formData[FORM_FIELDS.LAST_NAME] || "";
-    email = formData[FORM_FIELDS.EMAIL];
-    schoolName = formData[FORM_FIELDS.SCHOOL_NAME] || "";
-    numberOfChildren = parseInt(formData[FORM_FIELDS.NUMBER_OF_CHILDREN]) || 0;
-    entry_date = formData[FORM_FIELDS.ENTRY_DATE]
-      ? toAdelaideTime(formData[FORM_FIELDS.ENTRY_DATE])
-      : toAdelaideTime(new Date().toISOString());
+    // Extract common fields
+    const regType = formData[FORM_FIELDS.REG_TYPE] || "";
+    const firstName = formData[FORM_FIELDS.FIRST_NAME] || "";
+    const lastName = formData[FORM_FIELDS.LAST_NAME] || "";
+    const email = formData[FORM_FIELDS.EMAIL];
+    const phone = formData[FORM_FIELDS.PHONE] || "";
+    const additionalNotes = formData[FORM_FIELDS.ADDITIONAL_NOTES] || "";
+    const submissionDate = toAdelaideTime(new Date().toISOString());
 
     // Validate required fields
     if (!email) {
       context.log("❌ Validation failed - missing email");
-      context.log("Email provided:", !!email);
+      return null;
+    }
+
+    if (!regType) {
+      context.log("❌ Validation failed - missing registration type");
       return null;
     }
 
     const contactName = `${firstName} ${lastName}`.trim();
 
+    // Build base contact object
+    // Capitalize registration type to match SharePoint Choice field values (Parent/Player/Club)
+    const registrationTypeCapitalized = regType.charAt(0).toUpperCase() + regType.slice(1).toLowerCase();
+
     const result = {
-      parentName: contactName,
+      registrationType: registrationTypeCapitalized,
+      contactName: contactName,
+      firstName: firstName,
+      lastName: lastName,
       email: email.toLowerCase().trim(),
-      schoolName: schoolName.trim(),
-      numberOfChildren: numberOfChildren,
-      submissionDate: entry_date,
+      phone: phone,
+      additionalNotes: additionalNotes,
+      submissionDate: submissionDate,
       status: "New",
-      source: "School Partnership",
     };
 
+    // Add type-specific fields
+    if (regType === "parent") {
+      result.schoolName = formData[FORM_FIELDS.SCHOOL_NAME] || "";
+      result.numberOfChildren = parseInt(formData[FORM_FIELDS.NUMBER_OF_CHILDREN]) || 0;
+    } else if (regType === "player") {
+      result.playerClubName = formData[FORM_FIELDS.PLAYER_CLUB_NAME] || "";
+    } else if (regType === "club") {
+      result.clubName = formData[FORM_FIELDS.CLUB_NAME] || "";
+      result.clubSportType = formData[FORM_FIELDS.CLUB_SPORT_TYPE] || "";
+      result.clubNumberOfPlayers = parseInt(formData[FORM_FIELDS.CLUB_NUMBER_OF_PLAYERS]) || 0;
+    }
+
     context.log("✅ Contact data extracted successfully");
+    context.log("Registration type:", regType);
     return result;
   } catch (error) {
     context.log("❌ Error extracting contact data:", error);
@@ -192,10 +223,15 @@ function extractContactData(formData, context) {
 }
 
 function toAdelaideTime(dateString) {
-  return new Date(dateString + " UTC").toLocaleString("en-AU", {
+  // Convert to Adelaide timezone and return ISO format for SharePoint
+  const date = new Date(dateString);
+
+  // Format as ISO string in Adelaide timezone
+  const adelaideDate = new Date(date.toLocaleString("en-US", {
     timeZone: "Australia/Adelaide",
-    hour12: false,
-  });
+  }));
+
+  return adelaideDate.toISOString();
 }
 
 async function addToSharePointList(contactData, context) {
@@ -274,18 +310,33 @@ async function addToSharePointList(contactData, context) {
       targetList.id
     );
 
-    // Create the list item
+    // Create the list item - map to SharePoint StaticName fields
     const listItem = {
       fields: {
-        Title: contactData.parentName,
-        ParentName: contactData.parentName,
+        Title: contactData.contactName || contactData.email,
+        RegistrationType: contactData.registrationType,
+        ParentName: contactData.contactName,
         Email: contactData.email,
-        SchoolName: contactData.schoolName,
-        NumberofChildren: contactData.numberOfChildren,
+        Phone: contactData.phone,
+        Notes: contactData.additionalNotes,
         Status: contactData.status,
         SubmissionDate: contactData.submissionDate,
       },
     };
+
+    // Map type-specific fields to shared columns (using SharePoint StaticName)
+    // Note: registrationType is capitalized (Parent/Player/Club)
+    if (contactData.registrationType === "Parent") {
+      listItem.fields.SchoolName = contactData.schoolName || "";
+      listItem.fields.NumberofChildren = contactData.numberOfChildren || 0;
+    } else if (contactData.registrationType === "Player") {
+      listItem.fields.SchoolName = contactData.playerClubName || "";
+      listItem.fields.NumberofChildren = 1; // Default to 1 for individual players
+    } else if (contactData.registrationType === "Club") {
+      listItem.fields.SchoolName = contactData.clubName || "";
+      listItem.fields.NumberofChildren = contactData.clubNumberOfPlayers || 0;
+      listItem.fields.SportType = contactData.clubSportType || "";
+    }
 
     context.log(
       "Creating list item with data:",
