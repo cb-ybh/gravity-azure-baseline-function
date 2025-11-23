@@ -1,0 +1,42 @@
+# Pre-commit hooks to align with CI/CD pipeline
+# Ensures local validation matches GitHub Actions workflow
+
+repos:
+  - repo: local
+    hooks:
+      - id: npm-install
+        name: Install dependencies
+        entry: npm install
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [commit]
+
+      - id: npm-build
+        name: Run build
+        entry: bash -c 'npm run build --if-present'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [commit]
+
+      - id: npm-test
+        name: Run tests
+        entry: bash -c 'npm run test --if-present'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [commit]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ['--unsafe']  # Allow custom tags in Azure YAML
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: detect-private-key

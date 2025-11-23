@@ -5,10 +5,10 @@
   "main": "src/functions/*.js",
   "scripts": {
     "build": "echo 'No build needed for JavaScript'",
-    "watch": "echo 'No watch needed for JavaScript'", 
+    "watch": "echo 'No watch needed for JavaScript'",
     "prestart": "echo 'No prebuild needed for JavaScript'",
     "start": "func start",
-    "test": "jest"
+    "test": "echo 'No tests configured yet'"
   },
   "dependencies": {
     "@azure/functions": "^4.0.0",
